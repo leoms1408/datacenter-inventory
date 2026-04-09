@@ -1,5 +1,5 @@
+using System.Collections.Generic;
 using Il2Cpp;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 
 namespace InventoryMod
@@ -10,6 +10,9 @@ namespace InventoryMod
 
         public static readonly InventorySlot[] Slots = new InventorySlot[MaxSlots];
         public static int ActiveSlot = 0;
+
+        // Icon for whatever item is currently in the player's hand
+        public static Texture2D HandIcon;
 
         /// <summary>
         /// Switch to a different hotbar slot. Automatically stashes current hand
@@ -60,7 +63,7 @@ namespace InventoryMod
             if (handArray == null) return;
 
             // Collect alive objects from hand
-            var objects = new System.Collections.Generic.List<GameObject>();
+            var objects = new List<GameObject>();
             string displayName = "Item";
             int prefabID = -1;
 
@@ -90,7 +93,11 @@ namespace InventoryMod
 
             if (objects.Count == 0) return;
 
-            var slot = new InventorySlot(pm.objectInHand, objects.ToArray(), displayName, prefabID);
+            // Render icon before stashing (object still at its world position)
+            var icon = GetItemIcon(objects);
+            HandIcon = null;
+
+            var slot = new InventorySlot(pm.objectInHand, objects.ToArray(), displayName, prefabID, icon);
 
             // Teleport objects far away (no SetActive toggling)
             slot.Stash();
@@ -121,7 +128,7 @@ namespace InventoryMod
             }
 
             // Collect alive objects
-            var alive = new System.Collections.Generic.List<GameObject>();
+            var alive = new List<GameObject>();
             foreach (var go in slot.StoredObjects)
                 if (go != null) alive.Add(go);
 
@@ -150,12 +157,54 @@ namespace InventoryMod
             // Mark that current hand items came from inventory (need custom drop handling)
             Core.HandItemsFromInventory = true;
 
+            // Restore cached icon for the HUD
+            HandIcon = slot.Icon;
+
             // Ensure Drop InputAction is enabled (DropObject disables it)
             Core.EnsureDropActionEnabled();
 
-
             // Slot is now in hand, clear it
             Slots[slotIndex] = null;
+        }
+
+        /// <summary>
+        /// Gets the albedo texture from the first renderer on the object.
+        /// Reads directly from the material — no rendering required.
+        /// </summary>
+        private static readonly string[] TexSlots = { "_BaseMap", "_MainTex", "_BaseColorMap", "_Albedo", "_AlbedoMap", "_Diffuse" };
+
+        public static Texture2D GetItemIcon(List<GameObject> objects)
+        {
+            if (objects == null || objects.Count == 0) return null;
+
+            foreach (var obj in objects)
+            {
+                if (obj == null) continue;
+                var renderers = obj.GetComponentsInChildren<Renderer>();
+                if (renderers == null) continue;
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    var r = renderers[i];
+                    if (r == null) continue;
+                    var mat = r.material;
+                    if (mat == null) continue;
+
+                    // Try mainTexture first, then known URP/HDRP slots
+                    var tex = mat.mainTexture?.TryCast<Texture2D>();
+                    if (tex != null) return tex;
+
+                    foreach (var slot in TexSlots)
+                    {
+                        try
+                        {
+                            tex = mat.GetTexture(slot)?.TryCast<Texture2D>();
+                            if (tex != null) return tex;
+                        }
+                        catch { }
+                    }
+                }
+            }
+            return null;
         }
 
         /// <summary>

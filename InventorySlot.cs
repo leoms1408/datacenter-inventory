@@ -11,26 +11,31 @@ namespace InventoryMod
         public string DisplayName { get; }
         public int PrefabID { get; }
 
+        public Texture2D Icon { get; }
+
         public Vector3[] SavedLocalPositions { get; }
         public Quaternion[] SavedLocalRotations { get; }
 
         private static readonly Vector3 StashPosition = new Vector3(0, -5000, 0);
 
         public InventorySlot(PlayerManager.ObjectInHand itemType, GameObject[] objects,
-                             string displayName, int prefabID)
+                             string displayName, int prefabID, Texture2D icon = null)
         {
             ItemType = itemType;
             StoredObjects = objects;
             DisplayName = displayName;
             PrefabID = prefabID;
+            Icon = icon;
 
             SavedLocalPositions = new Vector3[objects.Length];
             SavedLocalRotations = new Quaternion[objects.Length];
+
             for (int i = 0; i < objects.Length; i++)
             {
-                if (objects[i] == null) continue;
-                SavedLocalPositions[i] = objects[i].transform.localPosition;
-                SavedLocalRotations[i] = objects[i].transform.localRotation;
+                var go = objects[i];
+                if (go == null) continue;
+                SavedLocalPositions[i] = go.transform.localPosition;
+                SavedLocalRotations[i] = go.transform.localRotation;
             }
         }
 
@@ -40,14 +45,10 @@ namespace InventoryMod
             {
                 if (go == null) continue;
 
-                var usable = go.GetComponent<UsableObject>();
+                var usable = go.GetComponent<UsableObject>()
+                          ?? go.GetComponent<CableSpinner>()?.TryCast<UsableObject>();
                 if (usable != null)
                 {
-                    // Unsubscribe native drop/action callbacks so the game's
-                    // own DropObject() can't fire for stashed items.
-                    // This prevents interference with our ManualDrop.
-                    UnsubscribeNativeCallbacks(usable);
-
                     usable.objectInHands = false;
                     if (usable.rb != null)
                     {
@@ -55,6 +56,9 @@ namespace InventoryMod
                         usable.rb.velocity = Vector3.zero;
                         usable.rb.angularVelocity = Vector3.zero;
                     }
+
+                    if (usable.inputctrl != null)
+                        Core.CachedInputCtrl = usable.inputctrl;
                 }
 
                 go.transform.SetParent(null, false);
@@ -73,35 +77,32 @@ namespace InventoryMod
                 go.transform.localPosition = SavedLocalPositions[i];
                 go.transform.localRotation = SavedLocalRotations[i];
 
-                var usable = go.GetComponent<UsableObject>();
+                var usable = go.GetComponent<UsableObject>()
+                          ?? go.GetComponent<CableSpinner>()?.TryCast<UsableObject>();
                 if (usable != null)
                 {
-                    usable.objectInHands = true;
                     if (usable.rb != null)
                     {
                         usable.rb.isKinematic = true;
                         usable.rb.velocity = Vector3.zero;
                         usable.rb.angularVelocity = Vector3.zero;
                     }
+
+                    // Call InteractOnClick to re-initialize any game-internal state set
+                    // during pickup (e.g. cable placement color). The Harmony patch allows
+                    // this since the object is at hand height (y > -100).
+                    usable.objectInHands = false;
+                    usable.InteractOnClick();
+
+                    // Re-apply our saved transform — InteractOnClick may have repositioned it
+                    go.transform.SetParent(handParent, false);
+                    go.transform.localPosition = SavedLocalPositions[i];
+                    go.transform.localRotation = SavedLocalRotations[i];
+
+                    // Force objectInHands true in case InteractOnClick didn't set it
+                    usable.objectInHands = true;
                 }
             }
-        }
-
-        private static void UnsubscribeNativeCallbacks(UsableObject usable)
-        {
-            try
-            {
-                if (usable.inputctrl == null) return;
-                var player = usable.inputctrl.Player;
-
-                if (usable.dropStarted != null)
-                    player.Drop.remove_started(usable.dropStarted);
-                if (usable.actionInHandStarted != null)
-                    player.Interact.remove_started(usable.actionInHandStarted);
-                if (usable.secondActionStarted != null)
-                    player.SecondAction.remove_started(usable.secondActionStarted);
-            }
-            catch { }
         }
 
         public bool IsEmpty()

@@ -1,9 +1,10 @@
+using HarmonyLib;
 using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-[assembly: MelonInfo(typeof(InventoryMod.Core), "Inventory", "1.0.0", "leoms1408")]
+[assembly: MelonInfo(typeof(InventoryMod.Core), "Inventory", "1.0.1", "leoms1408")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace InventoryMod
@@ -12,6 +13,7 @@ namespace InventoryMod
     {
         private float _lastScrollTime;
         private const float ScrollCooldown = 0.15f;
+        private PlayerManager.ObjectInHand _lastHandItem = PlayerManager.ObjectInHand.None;
 
         // Track whether current hand items were restored by us
         public static bool HandItemsFromInventory;
@@ -23,7 +25,8 @@ namespace InventoryMod
         public override void OnInitializeMelon()
         {
             Instance = this;
-            LoggerInstance.Msg("Inventory Mod v1.0.0 loaded!");
+            HarmonyInstance.PatchAll();
+            LoggerInstance.Msg("Inventory Mod v1.0.1 loaded!");
         }
 
         public override void OnUpdate()
@@ -38,6 +41,26 @@ namespace InventoryMod
             if (!pm.enabledPlayerMovement) return;
 
             Inventory.CleanupSlots();
+
+            // Render icon for freshly picked-up items (not from our inventory)
+            if (!HandItemsFromInventory)
+            {
+                if (pm.objectInHand == PlayerManager.ObjectInHand.None)
+                {
+                    Inventory.HandIcon = null;
+                    _lastHandItem = PlayerManager.ObjectInHand.None;
+                }
+                else if (pm.objectInHand != _lastHandItem)
+                {
+                    _lastHandItem = pm.objectInHand;
+                    var handArray = pm.objectInHandGO;
+                    if (handArray != null && handArray.Length > 0 && handArray[0] != null)
+                    {
+                        var tmp = new System.Collections.Generic.List<GameObject> { handArray[0] };
+                        Inventory.HandIcon = Inventory.GetItemIcon(tmp);
+                    }
+                }
+            }
 
             // Handle drop for inventory-restored items.
             // We do this FULLY manually since the game's native drop callbacks
@@ -159,7 +182,6 @@ namespace InventoryMod
             // Re-enable Drop action — DropObject() disables it (nothing in hand),
             // but we need it active for future inventory drops.
             EnsureDropActionEnabled();
-
         }
 
         /// <summary>
@@ -176,6 +198,23 @@ namespace InventoryMod
         public override void OnGUI()
         {
             InventoryHud.Draw();
+        }
+    }
+
+    /// <summary>
+    /// Block InteractOnClick on CableSpinners that are stashed (Y < -100).
+    /// When objectInHands is true the cable is in the player's hand → allow.
+    /// When Y > -100 the cable is on the ground → allow.
+    /// Otherwise it is in our stash → block.
+    /// </summary>
+    [HarmonyPatch(typeof(CableSpinner), nameof(CableSpinner.InteractOnClick))]
+    static class CableSpinner_InteractOnClick_Patch
+    {
+        static bool Prefix(CableSpinner __instance)
+        {
+            if (__instance.objectInHands) return true;
+            if (__instance.transform.position.y > -100f) return true;
+            return false;
         }
     }
 }

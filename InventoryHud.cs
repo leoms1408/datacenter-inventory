@@ -8,7 +8,6 @@ namespace InventoryMod
         private const float SlotSize = 50f;
         private const float SlotSpacing = 4f;
         private const float BottomMargin = 40f;
-        private const float NameHeight = 16f;
 
         private static readonly Color EmptyColor = new Color(0.15f, 0.15f, 0.15f, 0.6f);
         private static readonly Color StashedColor = new Color(0.25f, 0.35f, 0.25f, 0.8f);
@@ -38,6 +37,13 @@ namespace InventoryMod
         {
             GUI.color = color;
             GUI.DrawTexture(rect, Tex);
+        }
+
+        private static void DrawIcon(Rect rect, Texture2D tex)
+        {
+            if (tex == null) return;
+            GUI.color = Color.white;
+            GUI.DrawTexture(rect, tex, ScaleMode.ScaleToFit);
         }
 
         public static void Draw()
@@ -94,29 +100,47 @@ namespace InventoryMod
                 // Item info inside the slot
                 if (showItem)
                 {
-                    string name;
+                    Texture2D icon;
                     int count;
+                    string name;
 
                     if (isActive && handHasItem)
                     {
                         count = pm.numberOfObjectsInHand;
                         name = pm.objectInHand.ToString();
+                        icon = Inventory.HandIcon;
                     }
                     else
                     {
                         count = slot.AliveCount();
                         name = slot.DisplayName;
+                        icon = slot.Icon;
                     }
 
-                    // Truncate long names to fit inside the box
-                    if (name.Length > 8) name = name.Substring(0, 7) + "..";
+                    // Icon area: leave top 16px for slot number, bottom 16px for count
+                    var iconRect = new Rect(rect.x + 4, rect.y + 14, rect.width - 8, rect.height - 26);
 
-                    // Item name centered inside the slot
-                    GUI.Label(new Rect(rect.x + 2, rect.y + 15, rect.width - 4, 20), name);
+                    /*if (icon != null)
+                    {
+                        DrawIcon(iconRect, icon);
+                    }
+                    else
+                    {*/
+                        // Fallback: abbreviated name
+                        if (name.Length > 8) name = name.Substring(0, 7) + "..";
+                        GUI.Label(new Rect(rect.x + 2, rect.y + 17, rect.width - 4, 20), name);
+                    //}
 
-                    // Count (bottom-right corner, only if > 1)
+                    // Count overlay (bottom-right, only if > 1)
                     if (count > 1)
-                        GUI.Label(new Rect(rect.x + 5, rect.y + 32, rect.width - 10, 16), $"x{count}");
+                    {
+                        string countStr = $"x{count}";
+                        // Dark shadow for readability over icon
+                        GUI.color = new Color(0, 0, 0, 0.6f);
+                        GUI.DrawTexture(new Rect(rect.x + 3, rect.yMax - 17, rect.width - 6, 14), Tex);
+                        GUI.color = Color.white;
+                        GUI.Label(new Rect(rect.x + 4, rect.yMax - 18, rect.width - 8, 16), countStr);
+                    }
                 }
             }
         }
