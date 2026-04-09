@@ -202,9 +202,9 @@ namespace InventoryMod
     }
 
     /// <summary>
-    /// Block InteractOnClick on CableSpinners that are stashed (Y < -100).
+    /// Block InteractOnClick on CableSpinners that are stashed (Y > 1000).
     /// When objectInHands is true the cable is in the player's hand → allow.
-    /// When Y > -100 the cable is on the ground → allow.
+    /// When Y is below the stash threshold the cable is on the ground → allow.
     /// Otherwise it is in our stash → block.
     /// </summary>
     [HarmonyPatch(typeof(CableSpinner), nameof(CableSpinner.InteractOnClick))]
@@ -213,7 +213,7 @@ namespace InventoryMod
         static bool Prefix(CableSpinner __instance)
         {
             if (__instance.objectInHands) return true;
-            if (__instance.transform.position.y > -100f) return true;
+            if (__instance.transform.position.y < 1000f) return true;
             return false;
         }
     }

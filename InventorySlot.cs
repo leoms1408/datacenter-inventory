@@ -16,7 +16,9 @@ namespace InventoryMod
         public Vector3[] SavedLocalPositions { get; }
         public Quaternion[] SavedLocalRotations { get; }
 
-        private static readonly Vector3 StashPosition = new Vector3(0, -5000, 0);
+        // Stash high above the world — avoids negative-Y kill zones some games use.
+        // Must stay above StashThreshold used in the Harmony patch (1000f).
+        private static readonly Vector3 StashPosition = new Vector3(0, 5000, 0);
 
         public InventorySlot(PlayerManager.ObjectInHand itemType, GameObject[] objects,
                              string displayName, int prefabID, Texture2D icon = null)
@@ -61,8 +63,20 @@ namespace InventoryMod
                         Core.CachedInputCtrl = usable.inputctrl;
                 }
 
-                go.transform.SetParent(null, false);
-                go.transform.position = StashPosition;
+                // CableSpinners are teleported so the Harmony patch can detect them by Y position.
+                // All other items are deactivated in place — this stops any game Update() logic
+                // (e.g. QSFP port cleanup) that would destroy sub-components when the object
+                // is at an invalid world position.
+                if (go.GetComponent<CableSpinner>() != null)
+                {
+                    go.transform.SetParent(null, false);
+                    go.transform.position = StashPosition;
+                }
+                else
+                {
+                    go.transform.SetParent(null, false);
+                    go.SetActive(false);
+                }
             }
         }
 
@@ -72,6 +86,9 @@ namespace InventoryMod
             {
                 var go = StoredObjects[i];
                 if (go == null) continue;
+
+                if (!go.activeSelf)
+                    go.SetActive(true);
 
                 go.transform.SetParent(handParent, false);
                 go.transform.localPosition = SavedLocalPositions[i];
@@ -88,9 +105,9 @@ namespace InventoryMod
                         usable.rb.angularVelocity = Vector3.zero;
                     }
 
-                    // Call InteractOnClick to re-initialize any game-internal state set
+                        // Call InteractOnClick to re-initialize any game-internal state set
                     // during pickup (e.g. cable placement color). The Harmony patch allows
-                    // this since the object is at hand height (y > -100).
+                    // this since the object is at hand height (y < StashThreshold).
                     usable.objectInHands = false;
                     usable.InteractOnClick();
 
